@@ -164,9 +164,50 @@
     .file-name {
       margin-top: 20px;
       min-height: 24px;
-      color: var(--accent);
+      color: var(--muted);
       font-weight: 700;
       word-break: break-all;
+    }
+
+    .file-name.has-file {
+      color: #0a72ef;
+    }
+
+    .file-state {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .file-state .file-name {
+      margin-top: 0;
+      min-width: 0;
+    }
+
+    .clear-file {
+      position: relative;
+      z-index: 2;
+      display: none;
+      flex: 0 0 auto;
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid #e9b5b0;
+      background: #fff0ee;
+      color: var(--danger);
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .clear-file.visible {
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .clear-file:hover {
+      background: #ffe4e1;
     }
 
     .status {
@@ -328,7 +369,7 @@
         <h1>保全方案编号匹配工具</h1>
         <p class="tagline">上传主表和映射表，按保险公司拆分导出匹配后的 Excel 文件。</p>
       </div>
-      <div class="local-badge">本地处理 · 不上传</div>
+      <div class="local-badge">本地处理 无需网络连接</div>
     </header>
 
     <section class="section">
@@ -343,7 +384,10 @@
             <p class="drop-title">主表：保全名单</p>
             <p class="drop-copy">拖拽或点击上传，需包含「方案编号」「保险公司」。</p>
           </div>
-          <div class="file-name" id="mainFileName">未选择文件</div>
+          <div class="file-state">
+            <div class="file-name" id="mainFileName">未选择文件</div>
+            <button class="clear-file" id="mainClear" type="button">删除</button>
+          </div>
         </label>
         <label class="dropzone" id="mapDrop">
           <input id="mapFile" type="file" accept=".xlsx">
@@ -351,7 +395,10 @@
             <p class="drop-title">映射表：保险方案映射关系</p>
             <p class="drop-copy">拖拽或点击上传，需包含「方案编号」「保险公司方案编号」。</p>
           </div>
-          <div class="file-name" id="mapFileName">未选择文件</div>
+          <div class="file-state">
+            <div class="file-name" id="mapFileName">未选择文件</div>
+            <button class="clear-file" id="mapClear" type="button">删除</button>
+          </div>
         </label>
       </div>
     </section>
@@ -470,6 +517,8 @@
       mapFile: document.getElementById("mapFile"),
       mainFileName: document.getElementById("mainFileName"),
       mapFileName: document.getElementById("mapFileName"),
+      mainClear: document.getElementById("mainClear"),
+      mapClear: document.getElementById("mapClear"),
       statusBox: document.getElementById("statusBox"),
       errorList: document.getElementById("errorList"),
       summaryEmpty: document.getElementById("summaryEmpty"),
@@ -484,15 +533,15 @@
       exportButton: document.getElementById("exportButton")
     };
 
-    setupUpload("main", nodes.mainFile, document.getElementById("mainDrop"), nodes.mainFileName);
-    setupUpload("mapping", nodes.mapFile, document.getElementById("mapDrop"), nodes.mapFileName);
+    setupUpload("main", nodes.mainFile, document.getElementById("mainDrop"), nodes.mainFileName, nodes.mainClear);
+    setupUpload("mapping", nodes.mapFile, document.getElementById("mapDrop"), nodes.mapFileName, nodes.mapClear);
     nodes.exportButton.addEventListener("click", exportZip);
     renderSpecialFields();
 
-    function setupUpload(kind, input, dropzone, nameNode) {
+    function setupUpload(kind, input, dropzone, nameNode, clearButton) {
       input.addEventListener("change", async () => {
         if (input.files && input.files[0]) {
-          await handleFile(kind, input.files[0], nameNode);
+          await handleFile(kind, input.files[0], nameNode, clearButton);
         }
       });
 
@@ -514,13 +563,19 @@
         const file = event.dataTransfer.files && event.dataTransfer.files[0];
         if (file) {
           input.files = event.dataTransfer.files;
-          await handleFile(kind, file, nameNode);
+          await handleFile(kind, file, nameNode, clearButton);
         }
+      });
+
+      clearButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        clearUploadedFile(kind, input, nameNode, clearButton);
       });
     }
 
-    async function handleFile(kind, file, nameNode) {
-      nameNode.textContent = file.name;
+    async function handleFile(kind, file, nameNode, clearButton) {
+      setFileState(nameNode, clearButton, file.name);
       try {
         const parsed = await parseWorkbook(file);
         state[kind] = parsed;
@@ -529,6 +584,25 @@
         setStatus("error", error.message);
       }
       processFiles();
+    }
+
+    function clearUploadedFile(kind, input, nameNode, clearButton) {
+      input.value = "";
+      state[kind] = null;
+      setFileState(nameNode, clearButton, "");
+      processFiles();
+    }
+
+    function setFileState(nameNode, clearButton, fileName) {
+      if (fileName) {
+        nameNode.textContent = `已选择：${fileName}`;
+        nameNode.classList.add("has-file");
+        clearButton.classList.add("visible");
+        return;
+      }
+      nameNode.textContent = "未选择文件";
+      nameNode.classList.remove("has-file");
+      clearButton.classList.remove("visible");
     }
 
     async function parseWorkbook(file) {
