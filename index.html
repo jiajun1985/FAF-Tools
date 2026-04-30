@@ -445,7 +445,12 @@
     const PLAN_HEADER = "方案编号";
     const COMPANY_HEADER = "保险公司";
     const COMPANY_PLAN_HEADER = "保险公司方案编号";
+    const INSURED_BIRTHDAY_HEADER = "被保险人出生日期";
     const UNFILLED_COMPANY = "未填写保险公司";
+    const AGE_EXTRA_FIELD_COMPANIES = new Set([
+      "阳光财产保险股份有限公司苏州中心支公司",
+      "中国人民健康保险股份有限公司上海分公司"
+    ]);
 
     const EXTRA_FIELDS = {
       "百年人寿保险股份有限公司浙江分公司": ["被保人人序号", "保险计划", "份数", "职业代码", "职业类别", "国籍"],
@@ -775,9 +780,10 @@
     function buildWorkbookForGroup(group, baseHeaders, companyPlanIndex) {
       const extraFields = EXTRA_FIELDS[group.company] || [];
       const headers = [...baseHeaders, ...extraFields];
+      const birthdayIndex = baseHeaders.indexOf(INSURED_BIRTHDAY_HEADER);
       const rows = group.rows.map((item) => [
         ...item.cells,
-        ...Array(extraFields.length).fill("")
+        ...buildExtraFieldValues(group.company, extraFields, item.cells, birthdayIndex)
       ]);
       const aoa = [headers, ...rows];
       const worksheet = XLSX.utils.aoa_to_sheet(aoa);
@@ -815,6 +821,54 @@
         type: "array",
         cellStyles: true
       });
+    }
+
+    function buildExtraFieldValues(company, extraFields, row, birthdayIndex) {
+      return extraFields.map((field) => {
+        if (field === "年龄" && AGE_EXTRA_FIELD_COMPANIES.has(company)) {
+          return calculateAge(row[birthdayIndex]);
+        }
+        return "";
+      });
+    }
+
+    function calculateAge(birthdayValue) {
+      if (birthdayValue === null || birthdayValue === undefined || birthdayValue === "") return "";
+      const birthday = parseDateValue(birthdayValue);
+      if (!birthday) return "";
+
+      const today = new Date();
+      let age = today.getFullYear() - birthday.getFullYear();
+      const monthDiff = today.getMonth() - birthday.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthday.getDate())) {
+        age -= 1;
+      }
+      return age >= 0 ? age : "";
+    }
+
+    function parseDateValue(value) {
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value;
+      }
+      const text = normalizeText(value);
+      if (!text) return null;
+
+      const normalized = text
+        .replace(/[./]/g, "-")
+        .replace(/年|月/g, "-")
+        .replace(/日/g, "")
+        .split(" ")[0];
+      const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (!match) return null;
+
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const date = new Date(year, month - 1, day);
+      if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+        return null;
+      }
+      return date;
     }
 
     function resetViews() {
