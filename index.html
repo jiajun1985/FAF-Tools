@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>保全方案编号匹配工具</title>
+  <script src="./vendor/xlsx.full.min.js"></script>
+  <script src="./vendor/jszip.min.js"></script>
+  <style>
+    :root {
+      --ink: #202124;
+      --muted: #65717f;
+      --line: #d7dde4;
+      --line-strong: #9eb4be;
+      --paper: #f7f4ee;
+      --panel: #ffffff;
+      --panel-alt: #fbfcfc;
+      --accent: #176b87;
+      --accent-dark: #0d4659;
+      --danger: #a83f39;
+      --danger-bg: #fff1f0;
+      --ok: #2d6a4f;
+      --ok-bg: #edf8f2;
+      --warn: #9a5b12;
+      --warn-bg: #fff6e5;
+      --shadow: 0 16px 34px rgba(32, 33, 36, 0.08);
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background:
+        linear-gradient(90deg, rgba(23, 107, 135, 0.08) 1px, transparent 1px),
+        linear-gradient(rgba(23, 107, 135, 0.06) 1px, transparent 1px),
+        var(--paper);
+      background-size: 28px 28px;
+      color: var(--ink);
+      font-family: "Geist", "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+      line-height: 1.5;
+      transition: background-color 0.18s ease, color 0.18s ease;
+    }
+
+    .shell {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 32px auto 48px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 22px;
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 44px);
+      letter-spacing: 0;
+      line-height: 1.08;
+    }
+
+    .tagline {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .local-badge {
+      flex: 0 0 auto;
+      border: 1px solid var(--accent);
+      color: var(--accent-dark);
+      background: #eaf5f7;
+      min-height: 38px;
+      padding: 0 13px;
+      font-weight: 700;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .section {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      padding: 22px;
+      margin-top: 18px;
+      border-radius: 0;
+      backdrop-filter: none;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 680;
+      letter-spacing: 0;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .upload-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .dropzone {
+      position: relative;
+      min-height: 180px;
+      border: 2px dashed var(--line-strong);
+      background: #fbfcfc;
+      border-radius: 0;
+      padding: 18px;
+      display: grid;
+      align-content: space-between;
+      cursor: pointer;
+      transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+    }
+
+    .dropzone:hover,
+    .dropzone.dragging {
+      border-color: var(--accent);
+      background: #eef8fa;
+      transform: translateY(-1px);
+    }
+
+    .dropzone input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .drop-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .drop-copy {
+      margin: 8px 0 0;
+      color: var(--muted);
+    }
+
+    .file-name {
+      margin-top: 20px;
+      min-height: 24px;
+      color: var(--accent);
+      font-weight: 700;
+      word-break: break-all;
+    }
+
+    .status {
+      border: 1px solid var(--line);
+      background: #f9fafb;
+      border-radius: 0;
+      padding: 12px 14px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .status.ok {
+      border-color: color-mix(in srgb, var(--ok) 30%, var(--line));
+      background: var(--ok-bg);
+      color: var(--ok);
+    }
+
+    .status.warn {
+      border-color: color-mix(in srgb, var(--warn) 34%, var(--line));
+      background: var(--warn-bg);
+      color: var(--warn);
+    }
+
+    .status.error {
+      border-color: color-mix(in srgb, var(--danger) 32%, var(--line));
+      background: var(--danger-bg);
+      color: var(--danger);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 0;
+    }
+
+    table {
+      width: 100%;
+      min-width: 720px;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    th {
+      background: #eef3f5;
+      color: #263238;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .number {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .empty {
+      padding: 24px;
+      color: var(--muted);
+      background: var(--panel-alt);
+      border: 1px dashed var(--line);
+      border-radius: 0;
+    }
+
+    .field-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-width: 620px;
+      white-space: normal;
+    }
+
+    .field-tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border: 1px solid #c6d5dc;
+      border-color: #c6d5dc;
+      background: #f3f8fa;
+      color: #284b58;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 999px;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      background: var(--accent);
+      color: #fff;
+      min-height: 44px;
+      padding: 0 22px;
+      font-weight: 800;
+      font-size: 15px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: transform 0.16s ease, background 0.16s ease, opacity 0.16s ease;
+    }
+
+    button:hover:not(:disabled) {
+      background: var(--accent-dark);
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .error-list {
+      margin: 12px 0 0;
+      padding-left: 20px;
+      color: var(--danger);
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @media (max-width: 760px) {
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .upload-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <h1>保全方案编号匹配工具</h1>
+        <p class="tagline">上传主表和映射表，按保险公司拆分导出匹配后的 Excel 文件。</p>
+      </div>
+      <div class="local-badge">本地处理 · 不上传</div>
+    </header>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>1. 上传文件</h2>
+        <span class="hint">仅支持 .xlsx，默认读取第一个工作表</span>
+      </div>
+      <div class="upload-grid">
+        <label class="dropzone" id="mainDrop">
+          <input id="mainFile" type="file" accept=".xlsx">
+          <div>
+            <p class="drop-title">主表：保全名单</p>
+            <p class="drop-copy">拖拽或点击上传，需包含「方案编号」「保险公司」。</p>
+          </div>
+          <div class="file-name" id="mainFileName">未选择文件</div>
+        </label>
+        <label class="dropzone" id="mapDrop">
+          <input id="mapFile" type="file" accept=".xlsx">
+          <div>
+            <p class="drop-title">映射表：保险方案映射关系</p>
+            <p class="drop-copy">拖拽或点击上传，需包含「方案编号」「保险公司方案编号」。</p>
+          </div>
+          <div class="file-name" id="mapFileName">未选择文件</div>
+        </label>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>特殊字段提示</h2>
+        <span class="hint">以下字段会按保险公司追加在导出表最后，字段值默认留空</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>保险公司名称</th>
+              <th>导出时追加的特殊字段</th>
+            </tr>
+          </thead>
+          <tbody id="specialFieldsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>2. 按保险公司校验结果</h2>
+        <span class="hint">分别展示每家保险公司的匹配情况</span>
+      </div>
+      <div id="statusBox" class="status">请先上传主表和映射表。</div>
+      <ul id="errorList" class="error-list hidden"></ul>
+      <div id="summaryEmpty" class="empty" style="margin-top: 14px;">暂无校验结果。</div>
+      <div id="summaryWrap" class="table-wrap hidden" style="margin-top: 14px;">
+        <table>
+          <thead>
+            <tr>
+              <th>保险公司名称</th>
+              <th class="number">数据行数</th>
+              <th class="number">匹配成功</th>
+              <th class="number">未匹配</th>
+            </tr>
+          </thead>
+          <tbody id="summaryBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="unmatchedSection" class="section hidden">
+      <div class="section-head">
+        <h2>3. 未匹配明细</h2>
+        <span class="hint">这些记录仍会导出，新增列写「未匹配」并标红</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>保险公司名称</th>
+              <th>方案编号</th>
+              <th class="number">出现行数</th>
+            </tr>
+          </thead>
+          <tbody id="unmatchedBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>4. 导出文件</h2>
+        <span class="hint">每个保险公司一个 Excel，全部打包成 ZIP</span>
+      </div>
+      <div id="exportEmpty" class="empty">完成校验后会显示导出清单。</div>
+      <div id="exportWrap" class="table-wrap hidden">
+        <table>
+          <thead>
+            <tr>
+              <th>将导出文件</th>
+              <th class="number">数据行数</th>
+              <th>文件名</th>
+            </tr>
+          </thead>
+          <tbody id="exportBody"></tbody>
+        </table>
+      </div>
+      <div class="actions" style="margin-top: 16px;">
+        <span class="hint">导出文件名会自动替换系统不允许的字符。</span>
+        <button id="exportButton" type="button" disabled>导出 ZIP</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const PLAN_HEADER = "方案编号";
+    const COMPANY_HEADER = "保险公司";
+    const COMPANY_PLAN_HEADER = "保险公司方案编号";
+    const UNFILLED_COMPANY = "未填写保险公司";
+
+    const EXTRA_FIELDS = {
+      "百年人寿保险股份有限公司浙江分公司": ["被保人人序号", "保险计划", "份数", "职业代码", "职业类别", "国籍"],
+      "亚太财产保险有限公司深圳分公司": ["保险责任", "赔付比例", "免赔额", "是否含一级医院", "一年期标准保费", "险种", "保单号", "批次", "批改信息", "批改保费", "生效止期", "投保项目", "既往症名称"],
+      "阳光财产保险股份有限公司苏州中心支公司": ["年龄", "职业代码", "职业类别", "批改标志", "保司方案代码"],
+      "中国人民健康保险股份有限公司上海分公司": ["状态", "年龄", "国籍", "生僻字标识", "职业代码", "职业类别", "岗位", "保险计划"]
+    };
+
+    const state = {
+      main: null,
+      mapping: null,
+      result: null
+    };
+
+    const nodes = {
+      mainFile: document.getElementById("mainFile"),
+      mapFile: document.getElementById("mapFile"),
+      mainFileName: document.getElementById("mainFileName"),
+      mapFileName: document.getElementById("mapFileName"),
+      statusBox: document.getElementById("statusBox"),
+      errorList: document.getElementById("errorList"),
+      summaryEmpty: document.getElementById("summaryEmpty"),
+      summaryWrap: document.getElementById("summaryWrap"),
+      summaryBody: document.getElementById("summaryBody"),
+      unmatchedSection: document.getElementById("unmatchedSection"),
+      unmatchedBody: document.getElementById("unmatchedBody"),
+      specialFieldsBody: document.getElementById("specialFieldsBody"),
+      exportEmpty: document.getElementById("exportEmpty"),
+      exportWrap: document.getElementById("exportWrap"),
+      exportBody: document.getElementById("exportBody"),
+      exportButton: document.getElementById("exportButton")
+    };
+
+    setupUpload("main", nodes.mainFile, document.getElementById("mainDrop"), nodes.mainFileName);
+    setupUpload("mapping", nodes.mapFile, document.getElementById("mapDrop"), nodes.mapFileName);
+    nodes.exportButton.addEventListener("click", exportZip);
+    renderSpecialFields();
+
+    function setupUpload(kind, input, dropzone, nameNode) {
+      input.addEventListener("change", async () => {
+        if (input.files && input.files[0]) {
+          await handleFile(kind, input.files[0], nameNode);
+        }
+      });
+
+      ["dragenter", "dragover"].forEach((eventName) => {
+        dropzone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          dropzone.classList.add("dragging");
+        });
+      });
+
+      ["dragleave", "drop"].forEach((eventName) => {
+        dropzone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          dropzone.classList.remove("dragging");
+        });
+      });
+
+      dropzone.addEventListener("drop", async (event) => {
+        const file = event.dataTransfer.files && event.dataTransfer.files[0];
+        if (file) {
+          input.files = event.dataTransfer.files;
+          await handleFile(kind, file, nameNode);
+        }
+      });
+    }
+
+    async function handleFile(kind, file, nameNode) {
+      nameNode.textContent = file.name;
+      try {
+        const parsed = await parseWorkbook(file);
+        state[kind] = parsed;
+      } catch (error) {
+        state[kind] = null;
+        setStatus("error", error.message);
+      }
+      processFiles();
+    }
+
+    async function parseWorkbook(file) {
+      if (!file.name.toLowerCase().endsWith(".xlsx")) {
+        throw new Error("仅支持 .xlsx 文件。");
+      }
+      if (file.name.startsWith("~$")) {
+        throw new Error("检测到 Excel 临时锁文件，请上传正式工作簿。");
+      }
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: "array", cellDates: true });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        throw new Error("工作簿中没有可读取的工作表。");
+      }
+      const sheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        defval: "",
+        raw: false,
+        blankrows: false
+      });
+      if (!rows.length) {
+        throw new Error("第一个工作表为空。");
+      }
+      const headers = rows[0].map((value) => normalizeText(value));
+      return {
+        fileName: file.name,
+        sheetName: firstSheetName,
+        headers,
+        rows: rows.slice(1).filter((row) => !isBlankRow(row))
+      };
+    }
+
+    function processFiles() {
+      resetViews();
+      if (!state.main || !state.mapping) {
+        setStatus("info", "请先上传主表和映射表。");
+        return;
+      }
+
+      const errors = [];
+      const mainPlanIndex = findHeaderIndex(state.main.headers, PLAN_HEADER);
+      const mainCompanyIndex = findHeaderIndex(state.main.headers, COMPANY_HEADER);
+      const mapPlanIndex = findHeaderIndex(state.mapping.headers, PLAN_HEADER);
+      const mapCompanyPlanIndex = findHeaderIndex(state.mapping.headers, COMPANY_PLAN_HEADER);
+
+      if (mainPlanIndex === -1) errors.push("主表缺少表头：「方案编号」。");
+      if (mainCompanyIndex === -1) errors.push("主表缺少表头：「保险公司」。");
+      if (mapPlanIndex === -1) errors.push("映射表缺少表头：「方案编号」。");
+      if (mapCompanyPlanIndex === -1) errors.push("映射表缺少表头：「保险公司方案编号」。");
+
+      if (errors.length) {
+        state.result = null;
+        renderErrors(errors);
+        setStatus("error", "表头校验未通过，请修正后重新上传。");
+        return;
+      }
+
+      const mapping = buildMapping(state.mapping.rows, mapPlanIndex, mapCompanyPlanIndex);
+      const output = buildOutput(state.main, mainPlanIndex, mainCompanyIndex, mapping.map);
+      state.result = {
+        ...output,
+        conflicts: mapping.conflicts
+      };
+
+      renderResult(state.result);
+    }
+
+    function buildMapping(rows, planIndex, companyPlanIndex) {
+      const map = new Map();
+      const conflicts = [];
+      rows.forEach((row, index) => {
+        const planCode = normalizeText(row[planIndex]);
+        const companyPlanCode = normalizeText(row[companyPlanIndex]);
+        if (!planCode) return;
+        if (map.has(planCode) && map.get(planCode) !== companyPlanCode) {
+          conflicts.push({
+            rowNumber: index + 2,
+            planCode,
+            firstValue: map.get(planCode),
+            currentValue: companyPlanCode
+          });
+          return;
+        }
+        if (!map.has(planCode)) {
+          map.set(planCode, companyPlanCode);
+        }
+      });
+      return { map, conflicts };
+    }
+
+    function buildOutput(main, planIndex, companyIndex, mapping) {
+      const outputHeaders = [
+        ...main.headers.slice(0, planIndex + 1),
+        COMPANY_PLAN_HEADER,
+        ...main.headers.slice(planIndex + 1)
+      ];
+      const companyPlanIndex = planIndex + 1;
+      const groups = new Map();
+      const unmatchedMap = new Map();
+
+      main.rows.forEach((row) => {
+        const planCode = normalizeText(row[planIndex]);
+        const company = normalizeText(row[companyIndex]) || UNFILLED_COMPANY;
+        const mappedValue = mapping.get(planCode);
+        const matched = Boolean(planCode) && mapping.has(planCode) && mappedValue !== "";
+        const companyPlanValue = matched ? mappedValue : "未匹配";
+        const baseRow = main.headers.map((_, index) => normalizeText(row[index]));
+        const outputRow = [
+          ...baseRow.slice(0, planIndex + 1),
+          companyPlanValue,
+          ...baseRow.slice(planIndex + 1)
+        ];
+
+        if (!groups.has(company)) {
+          groups.set(company, {
+            company,
+            rows: [],
+            total: 0,
+            matched: 0,
+            unmatched: 0
+          });
+        }
+
+        const group = groups.get(company);
+        group.rows.push({ cells: outputRow, matched, planCode });
+        group.total += 1;
+        if (matched) {
+          group.matched += 1;
+        } else {
+          group.unmatched += 1;
+          const detailKey = `${company}\u0000${planCode || "空方案编号"}`;
+          if (!unmatchedMap.has(detailKey)) {
+            unmatchedMap.set(detailKey, {
+              company,
+              planCode: planCode || "空方案编号",
+              count: 0
+            });
+          }
+          unmatchedMap.get(detailKey).count += 1;
+        }
+      });
+
+      return {
+        headers: outputHeaders,
+        companyPlanIndex,
+        groups: Array.from(groups.values()),
+        unmatchedDetails: Array.from(unmatchedMap.values())
+      };
+    }
+
+    function renderResult(result) {
+      renderSummary(result.groups);
+      renderUnmatched(result.unmatchedDetails);
+      renderExportList(result.groups);
+      renderErrors(result.conflicts.map((item) => (
+        `映射表第 ${item.rowNumber} 行方案编号「${item.planCode}」存在冲突，已使用首次出现的值「${item.firstValue}」。`
+      )));
+
+      const unmatchedCount = result.groups.reduce((sum, group) => sum + group.unmatched, 0);
+      if (unmatchedCount > 0) {
+        setStatus("warn", `存在 ${unmatchedCount} 条未匹配，仍可导出；导出文件中会写「未匹配」并标红。`);
+      } else if (result.conflicts.length > 0) {
+        setStatus("warn", "已通过校验，但映射表存在重复冲突；导出时使用首次出现的映射值。");
+      } else {
+        setStatus("ok", "已通过校验，可导出。");
+      }
+      nodes.exportButton.disabled = result.groups.length === 0;
+    }
+
+    function renderSummary(groups) {
+      nodes.summaryBody.innerHTML = groups.map((group) => `
+        <tr>
+          <td>${escapeHtml(group.company)}</td>
+          <td class="number">${group.total}</td>
+          <td class="number">${group.matched}</td>
+          <td class="number">${group.unmatched}</td>
+        </tr>
+      `).join("");
+      nodes.summaryEmpty.classList.add("hidden");
+      nodes.summaryWrap.classList.remove("hidden");
+    }
+
+    function renderUnmatched(details) {
+      if (!details.length) {
+        nodes.unmatchedSection.classList.add("hidden");
+        nodes.unmatchedBody.innerHTML = "";
+        return;
+      }
+      nodes.unmatchedBody.innerHTML = details.map((item) => `
+        <tr>
+          <td>${escapeHtml(item.company)}</td>
+          <td>${escapeHtml(item.planCode)}</td>
+          <td class="number">${item.count}</td>
+        </tr>
+      `).join("");
+      nodes.unmatchedSection.classList.remove("hidden");
+    }
+
+    function renderExportList(groups) {
+      nodes.exportBody.innerHTML = groups.map((group) => `
+        <tr>
+          <td>${escapeHtml(group.company)}</td>
+          <td class="number">${group.total}</td>
+          <td>${escapeHtml(buildCompanyFileName(group.company))}</td>
+        </tr>
+      `).join("");
+      nodes.exportEmpty.classList.add("hidden");
+      nodes.exportWrap.classList.remove("hidden");
+    }
+
+    function renderSpecialFields() {
+      nodes.specialFieldsBody.innerHTML = Object.entries(EXTRA_FIELDS).map(([company, fields]) => `
+        <tr>
+          <td>${escapeHtml(company)}</td>
+          <td>
+            <div class="field-tags">
+              ${fields.map((field) => `<span class="field-tag">${escapeHtml(field)}</span>`).join("")}
+            </div>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function exportZip() {
+      if (!state.result || !state.result.groups.length) return;
+      nodes.exportButton.disabled = true;
+      nodes.exportButton.textContent = "正在导出...";
+      try {
+        const zip = new JSZip();
+        const usedNames = new Set();
+        state.result.groups.forEach((group) => {
+          const excelData = buildWorkbookForGroup(group, state.result.headers, state.result.companyPlanIndex);
+          const fileName = uniqueFileName(buildCompanyFileName(group.company), usedNames);
+          zip.file(fileName, excelData);
+        });
+        const blob = await zip.generateAsync({ type: "blob" });
+        downloadBlob(blob, `保全名单_按保险公司拆分_${getTodayStamp()}.zip`);
+        nodes.exportButton.textContent = "导出 ZIP";
+      } catch (error) {
+        setStatus("error", `导出失败：${error.message}`);
+        nodes.exportButton.textContent = "导出 ZIP";
+      } finally {
+        nodes.exportButton.disabled = false;
+      }
+    }
+
+    function buildWorkbookForGroup(group, baseHeaders, companyPlanIndex) {
+      const extraFields = EXTRA_FIELDS[group.company] || [];
+      const headers = [...baseHeaders, ...extraFields];
+      const rows = group.rows.map((item) => [
+        ...item.cells,
+        ...Array(extraFields.length).fill("")
+      ]);
+      const aoa = [headers, ...rows];
+      const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+      const range = XLSX.utils.decode_range(worksheet["!ref"]);
+      worksheet["!cols"] = headers.map((header, index) => ({
+        wch: Math.min(Math.max(String(header).length + 4, index === 0 ? 14 : 10), 28)
+      }));
+      worksheet["!autofilter"] = { ref: XLSX.utils.encode_range(range) };
+
+      for (let col = range.s.c; col <= range.e.c; col += 1) {
+        const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
+        if (!worksheet[cellRef]) continue;
+        worksheet[cellRef].s = {
+          font: { bold: true, color: { rgb: "FFFFFF" } },
+          fill: { fgColor: { rgb: "176B87" } },
+          alignment: { horizontal: "center", vertical: "center" }
+        };
+      }
+
+      group.rows.forEach((item, index) => {
+        if (item.matched) return;
+        const cellRef = XLSX.utils.encode_cell({ r: index + 1, c: companyPlanIndex });
+        if (!worksheet[cellRef]) return;
+        worksheet[cellRef].s = {
+          font: { bold: true, color: { rgb: "9C2F2A" } },
+          fill: { fgColor: { rgb: "FCE4E2" } },
+          alignment: { horizontal: "center", vertical: "center" }
+        };
+      });
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+      return XLSX.write(workbook, {
+        bookType: "xlsx",
+        type: "array",
+        cellStyles: true
+      });
+    }
+
+    function resetViews() {
+      nodes.errorList.classList.add("hidden");
+      nodes.errorList.innerHTML = "";
+      nodes.summaryEmpty.classList.remove("hidden");
+      nodes.summaryWrap.classList.add("hidden");
+      nodes.summaryBody.innerHTML = "";
+      nodes.unmatchedSection.classList.add("hidden");
+      nodes.unmatchedBody.innerHTML = "";
+      nodes.exportEmpty.classList.remove("hidden");
+      nodes.exportWrap.classList.add("hidden");
+      nodes.exportBody.innerHTML = "";
+      nodes.exportButton.disabled = true;
+      state.result = null;
+    }
+
+    function setStatus(type, message) {
+      nodes.statusBox.className = "status";
+      if (type !== "info") {
+        nodes.statusBox.classList.add(type);
+      }
+      nodes.statusBox.textContent = message;
+    }
+
+    function renderErrors(errors) {
+      if (!errors.length) {
+        nodes.errorList.classList.add("hidden");
+        nodes.errorList.innerHTML = "";
+        return;
+      }
+      nodes.errorList.innerHTML = errors.map((error) => `<li>${escapeHtml(error)}</li>`).join("");
+      nodes.errorList.classList.remove("hidden");
+    }
+
+    function findHeaderIndex(headers, target) {
+      return headers.findIndex((header) => normalizeText(header) === target);
+    }
+
+    function normalizeText(value) {
+      if (value === null || value === undefined) return "";
+      return String(value).trim();
+    }
+
+    function isBlankRow(row) {
+      return row.every((value) => normalizeText(value) === "");
+    }
+
+    function sanitizeFileName(name) {
+      const cleaned = normalizeText(name || UNFILLED_COMPANY)
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .replace(/\s+/g, " ")
+        .trim();
+      return cleaned || UNFILLED_COMPANY;
+    }
+
+    function buildCompanyFileName(company) {
+      return `${sanitizeFileName(company)}_${getTodayStamp()}.xlsx`;
+    }
+
+    function getTodayStamp() {
+      const date = new Date();
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}${month}${day}`;
+    }
+
+    function uniqueFileName(fileName, usedNames) {
+      if (!usedNames.has(fileName)) {
+        usedNames.add(fileName);
+        return fileName;
+      }
+      const dotIndex = fileName.lastIndexOf(".");
+      const base = dotIndex === -1 ? fileName : fileName.slice(0, dotIndex);
+      const ext = dotIndex === -1 ? "" : fileName.slice(dotIndex);
+      let counter = 2;
+      let next = `${base}_${counter}${ext}`;
+      while (usedNames.has(next)) {
+        counter += 1;
+        next = `${base}_${counter}${ext}`;
+      }
+      usedNames.add(next);
+      return next;
+    }
+
+    function downloadBlob(blob, fileName) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+  </script>
+</body>
+</html>
