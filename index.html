@@ -45,7 +45,7 @@
     }
 
     .shell {
-      width: min(1180px, calc(100vw - 32px));
+      width: min(1000px, calc(100vw - 32px));
       margin: 32px auto 48px;
     }
 
@@ -400,6 +400,28 @@
             <button class="clear-file" id="mapClear" type="button">删除</button>
           </div>
         </label>
+        <label class="dropzone" id="medicalMapDrop">
+          <input id="medicalMapFile" type="file" accept=".xlsx">
+          <div>
+            <p class="drop-title">映射表：医保属性映射关系</p>
+            <p class="drop-copy">拖拽或点击上传，需包含「医保属地」「医保属性」「人保健康属性」。</p>
+          </div>
+          <div class="file-state">
+            <div class="file-name" id="medicalMapFileName">未选择文件</div>
+            <button class="clear-file" id="medicalMapClear" type="button">删除</button>
+          </div>
+        </label>
+        <label class="dropzone" id="specialCompanyMapDrop">
+          <input id="specialCompanyMapFile" type="file" accept=".xlsx">
+          <div>
+            <p class="drop-title">映射表：特殊保险公司映射关系</p>
+            <p class="drop-copy">拖拽或点击上传，需包含「特殊保险公司名称」或「保险公司名称」。</p>
+          </div>
+          <div class="file-state">
+            <div class="file-name" id="specialCompanyMapFileName">未选择文件</div>
+            <button class="clear-file" id="specialCompanyMapClear" type="button">删除</button>
+          </div>
+        </label>
       </div>
     </section>
 
@@ -426,7 +448,7 @@
         <h2>2. 按保险公司校验结果</h2>
         <span class="hint">分别展示每家保险公司的匹配情况</span>
       </div>
-      <div id="statusBox" class="status">请先上传主表和映射表。</div>
+      <div id="statusBox" class="status">请先上传主表、保险方案映射表、医保属性映射表和特殊保险公司映射表。</div>
       <ul id="errorList" class="error-list hidden"></ul>
       <div id="summaryEmpty" class="empty" style="margin-top: 14px;">暂无校验结果。</div>
       <div id="summaryWrap" class="table-wrap hidden" style="margin-top: 14px;">
@@ -493,11 +515,29 @@
     const COMPANY_HEADER = "保险公司";
     const COMPANY_PLAN_HEADER = "保险公司方案编号";
     const INSURED_BIRTHDAY_HEADER = "被保险人出生日期";
+    const MEDICAL_LOCATION_HEADER = "医保属地";
+    const RELATION_HEADER = "与主险人关系";
+    const MEDICAL_ATTRIBUTE_HEADER = "医保属性";
+    const PICC_HEALTH_ATTRIBUTE_HEADER = "人保健康属性";
+    const CHILD_RELATION_VALUE = "子女";
+    const PICC_HEALTH_COMPANY = "中国人民健康保险股份有限公司上海分公司";
+    const SPECIAL_COMPANY_HEADERS = ["特殊保险公司名称", "保险公司名称", "保险公司"];
     const UNFILLED_COMPANY = "未填写保险公司";
     const AGE_EXTRA_FIELD_COMPANIES = new Set([
       "阳光财产保险股份有限公司苏州中心支公司",
       "中国人民健康保险股份有限公司上海分公司"
     ]);
+    const TRAILING_SOURCE_FIELDS = [
+      "方案特别约定",
+      "客服",
+      "客户名称",
+      "是否高风险人群",
+      "重疾名称",
+      "客服维护时间",
+      "集团户名称",
+      "保全提取时间",
+      "是否理赔高风险"
+    ];
 
     const EXTRA_FIELDS = {
       "百年人寿保险股份有限公司浙江分公司": ["被保人人序号", "保险计划", "份数", "职业代码", "职业类别", "国籍"],
@@ -509,16 +549,24 @@
     const state = {
       main: null,
       mapping: null,
+      medicalMapping: null,
+      specialCompanyMapping: null,
       result: null
     };
 
     const nodes = {
       mainFile: document.getElementById("mainFile"),
       mapFile: document.getElementById("mapFile"),
+      medicalMapFile: document.getElementById("medicalMapFile"),
+      specialCompanyMapFile: document.getElementById("specialCompanyMapFile"),
       mainFileName: document.getElementById("mainFileName"),
       mapFileName: document.getElementById("mapFileName"),
+      medicalMapFileName: document.getElementById("medicalMapFileName"),
+      specialCompanyMapFileName: document.getElementById("specialCompanyMapFileName"),
       mainClear: document.getElementById("mainClear"),
       mapClear: document.getElementById("mapClear"),
+      medicalMapClear: document.getElementById("medicalMapClear"),
+      specialCompanyMapClear: document.getElementById("specialCompanyMapClear"),
       statusBox: document.getElementById("statusBox"),
       errorList: document.getElementById("errorList"),
       summaryEmpty: document.getElementById("summaryEmpty"),
@@ -535,6 +583,8 @@
 
     setupUpload("main", nodes.mainFile, document.getElementById("mainDrop"), nodes.mainFileName, nodes.mainClear);
     setupUpload("mapping", nodes.mapFile, document.getElementById("mapDrop"), nodes.mapFileName, nodes.mapClear);
+    setupUpload("medicalMapping", nodes.medicalMapFile, document.getElementById("medicalMapDrop"), nodes.medicalMapFileName, nodes.medicalMapClear);
+    setupUpload("specialCompanyMapping", nodes.specialCompanyMapFile, document.getElementById("specialCompanyMapDrop"), nodes.specialCompanyMapFileName, nodes.specialCompanyMapClear);
     nodes.exportButton.addEventListener("click", exportZip);
     renderSpecialFields();
 
@@ -639,21 +689,33 @@
 
     function processFiles() {
       resetViews();
-      if (!state.main || !state.mapping) {
-        setStatus("info", "请先上传主表和映射表。");
+      if (!state.main || !state.mapping || !state.medicalMapping || !state.specialCompanyMapping) {
+        setStatus("info", "请先上传主表、保险方案映射表、医保属性映射表和特殊保险公司映射表。");
         return;
       }
 
       const errors = [];
       const mainPlanIndex = findHeaderIndex(state.main.headers, PLAN_HEADER);
       const mainCompanyIndex = findHeaderIndex(state.main.headers, COMPANY_HEADER);
+      const mainMedicalLocationIndex = findHeaderIndex(state.main.headers, MEDICAL_LOCATION_HEADER);
+      const mainRelationIndex = findHeaderIndex(state.main.headers, RELATION_HEADER);
       const mapPlanIndex = findHeaderIndex(state.mapping.headers, PLAN_HEADER);
       const mapCompanyPlanIndex = findHeaderIndex(state.mapping.headers, COMPANY_PLAN_HEADER);
+      const medicalMapLocationIndex = findHeaderIndex(state.medicalMapping.headers, MEDICAL_LOCATION_HEADER);
+      const medicalMapAttributeIndex = findHeaderIndex(state.medicalMapping.headers, MEDICAL_ATTRIBUTE_HEADER);
+      const medicalMapPiccAttributeIndex = findHeaderIndex(state.medicalMapping.headers, PICC_HEALTH_ATTRIBUTE_HEADER);
+      const specialCompanyIndex = findFirstHeaderIndex(state.specialCompanyMapping.headers, SPECIAL_COMPANY_HEADERS);
 
       if (mainPlanIndex === -1) errors.push("主表缺少表头：「方案编号」。");
       if (mainCompanyIndex === -1) errors.push("主表缺少表头：「保险公司」。");
+      if (mainMedicalLocationIndex === -1) errors.push("主表缺少表头：「医保属地」。");
+      if (mainRelationIndex === -1) errors.push("主表缺少表头：「与主险人关系」。");
       if (mapPlanIndex === -1) errors.push("映射表缺少表头：「方案编号」。");
       if (mapCompanyPlanIndex === -1) errors.push("映射表缺少表头：「保险公司方案编号」。");
+      if (medicalMapLocationIndex === -1) errors.push("医保属性映射表缺少表头：「医保属地」。");
+      if (medicalMapAttributeIndex === -1) errors.push("医保属性映射表缺少表头：「医保属性」。");
+      if (medicalMapPiccAttributeIndex === -1) errors.push("医保属性映射表缺少表头：「人保健康属性」。");
+      if (specialCompanyIndex === -1) errors.push("特殊保险公司映射表缺少表头：「特殊保险公司名称」「保险公司名称」或「保险公司」。");
 
       if (errors.length) {
         state.result = null;
@@ -663,7 +725,23 @@
       }
 
       const mapping = buildMapping(state.mapping.rows, mapPlanIndex, mapCompanyPlanIndex);
-      const output = buildOutput(state.main, mainPlanIndex, mainCompanyIndex, mapping.map);
+      const medicalMapping = buildMedicalMapping(
+        state.medicalMapping.rows,
+        medicalMapLocationIndex,
+        medicalMapAttributeIndex,
+        medicalMapPiccAttributeIndex
+      );
+      const specialCompanies = buildSpecialCompanySet(state.specialCompanyMapping.rows, specialCompanyIndex);
+      const output = buildOutput(
+        state.main,
+        mainPlanIndex,
+        mainCompanyIndex,
+        mainMedicalLocationIndex,
+        mainRelationIndex,
+        mapping.map,
+        medicalMapping,
+        specialCompanies
+      );
       state.result = {
         ...output,
         conflicts: mapping.conflicts
@@ -695,13 +773,31 @@
       return { map, conflicts };
     }
 
-    function buildOutput(main, planIndex, companyIndex, mapping) {
-      const outputHeaders = [
-        ...main.headers.slice(0, planIndex + 1),
-        COMPANY_PLAN_HEADER,
-        ...main.headers.slice(planIndex + 1)
-      ];
-      const companyPlanIndex = planIndex + 1;
+    function buildMedicalMapping(rows, locationIndex, attributeIndex, piccAttributeIndex) {
+      const map = new Map();
+      rows.forEach((row) => {
+        const location = normalizeText(row[locationIndex]);
+        if (!location || map.has(location)) return;
+        map.set(location, {
+          normal: normalizeText(row[attributeIndex]),
+          piccHealth: normalizeText(row[piccAttributeIndex])
+        });
+      });
+      return map;
+    }
+
+    function buildSpecialCompanySet(rows, companyIndex) {
+      const set = new Set();
+      rows.forEach((row) => {
+        const company = normalizeText(row[companyIndex]);
+        if (company) set.add(company);
+      });
+      return set;
+    }
+
+    function buildOutput(main, planIndex, companyIndex, medicalLocationIndex, relationIndex, mapping, medicalMapping, specialCompanies) {
+      const outputHeaders = buildOutputHeaders(main.headers, planIndex, medicalLocationIndex);
+      const companyPlanIndex = outputHeaders.indexOf(COMPANY_PLAN_HEADER);
       const groups = new Map();
       const unmatchedMap = new Map();
 
@@ -712,11 +808,14 @@
         const matched = Boolean(planCode) && mapping.has(planCode) && mappedValue !== "";
         const companyPlanValue = matched ? mappedValue : "未匹配";
         const baseRow = main.headers.map((_, index) => normalizeText(row[index]));
-        const outputRow = [
-          ...baseRow.slice(0, planIndex + 1),
-          companyPlanValue,
-          ...baseRow.slice(planIndex + 1)
-        ];
+        const medicalAttributeValue = resolveMedicalAttribute({
+          company,
+          relation: baseRow[relationIndex],
+          location: baseRow[medicalLocationIndex],
+          medicalMapping,
+          specialCompanies
+        });
+        const outputRow = buildOutputRow(baseRow, planIndex, medicalLocationIndex, companyPlanValue, medicalAttributeValue);
 
         if (!groups.has(company)) {
           groups.set(company, {
@@ -753,6 +852,45 @@
         groups: Array.from(groups.values()),
         unmatchedDetails: Array.from(unmatchedMap.values())
       };
+    }
+
+    function buildOutputHeaders(headers, planIndex, medicalLocationIndex) {
+      const outputHeaders = [];
+      headers.forEach((header, index) => {
+        outputHeaders.push(header);
+        if (index === medicalLocationIndex) {
+          outputHeaders.push(MEDICAL_ATTRIBUTE_HEADER);
+        }
+        if (index === planIndex) {
+          outputHeaders.push(COMPANY_PLAN_HEADER);
+        }
+      });
+      return outputHeaders;
+    }
+
+    function buildOutputRow(row, planIndex, medicalLocationIndex, companyPlanValue, medicalAttributeValue) {
+      const outputRow = [];
+      row.forEach((value, index) => {
+        outputRow.push(value);
+        if (index === medicalLocationIndex) {
+          outputRow.push(medicalAttributeValue);
+        }
+        if (index === planIndex) {
+          outputRow.push(companyPlanValue);
+        }
+      });
+      return outputRow;
+    }
+
+    function resolveMedicalAttribute({ company, relation, location, medicalMapping, specialCompanies }) {
+      if (normalizeText(relation) === CHILD_RELATION_VALUE) {
+        return "有医保";
+      }
+      const mapping = medicalMapping.get(normalizeText(location));
+      if (!mapping) return "未匹配";
+      const shouldUsePiccHealthAttribute = company === PICC_HEALTH_COMPANY || specialCompanies.has(company);
+      const value = shouldUsePiccHealthAttribute ? mapping.piccHealth : mapping.normal;
+      return value || "未匹配";
     }
 
     function renderResult(result) {
@@ -853,11 +991,17 @@
 
     function buildWorkbookForGroup(group, baseHeaders, companyPlanIndex) {
       const extraFields = EXTRA_FIELDS[group.company] || [];
-      const headers = [...baseHeaders, ...extraFields];
       const birthdayIndex = baseHeaders.indexOf(INSURED_BIRTHDAY_HEADER);
+      const sourceColumnOrder = buildSourceColumnOrder(baseHeaders);
+      const headers = [
+        ...sourceColumnOrder.normal.map((index) => baseHeaders[index]),
+        ...extraFields,
+        ...sourceColumnOrder.trailing.map((index) => baseHeaders[index])
+      ];
       const rows = group.rows.map((item) => [
-        ...item.cells,
-        ...buildExtraFieldValues(group.company, extraFields, item.cells, birthdayIndex)
+        ...sourceColumnOrder.normal.map((index) => item.cells[index]),
+        ...buildExtraFieldValues(group.company, extraFields, item.cells, birthdayIndex),
+        ...sourceColumnOrder.trailing.map((index) => item.cells[index])
       ]);
       const aoa = [headers, ...rows];
       const worksheet = XLSX.utils.aoa_to_sheet(aoa);
@@ -879,7 +1023,8 @@
 
       group.rows.forEach((item, index) => {
         if (item.matched) return;
-        const cellRef = XLSX.utils.encode_cell({ r: index + 1, c: companyPlanIndex });
+        const reorderedCompanyPlanIndex = headers.indexOf(COMPANY_PLAN_HEADER);
+        const cellRef = XLSX.utils.encode_cell({ r: index + 1, c: reorderedCompanyPlanIndex });
         if (!worksheet[cellRef]) return;
         worksheet[cellRef].s = {
           font: { bold: true, color: { rgb: "9C2F2A" } },
@@ -895,6 +1040,29 @@
         type: "array",
         cellStyles: true
       });
+    }
+
+    function buildSourceColumnOrder(headers) {
+      const trailingSet = new Set(TRAILING_SOURCE_FIELDS);
+      const normalColumns = [];
+      const trailingColumns = [];
+
+      headers.forEach((header, index) => {
+        if (trailingSet.has(header)) {
+          trailingColumns.push(index);
+        } else {
+          normalColumns.push(index);
+        }
+      });
+
+      const orderedTrailingColumns = TRAILING_SOURCE_FIELDS
+        .map((field) => headers.indexOf(field))
+        .filter((index) => index !== -1);
+
+      return {
+        normal: normalColumns,
+        trailing: orderedTrailingColumns
+      };
     }
 
     function buildExtraFieldValues(company, extraFields, row, birthdayIndex) {
@@ -980,6 +1148,14 @@
 
     function findHeaderIndex(headers, target) {
       return headers.findIndex((header) => normalizeText(header) === target);
+    }
+
+    function findFirstHeaderIndex(headers, candidates) {
+      for (const candidate of candidates) {
+        const index = findHeaderIndex(headers, candidate);
+        if (index !== -1) return index;
+      }
+      return -1;
     }
 
     function normalizeText(value) {
