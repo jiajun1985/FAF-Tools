@@ -333,6 +333,7 @@
       );
       state.result = {
         ...output,
+        sheetName: state.main.sheetName,
         conflicts: mapping.conflicts
       };
 
@@ -564,7 +565,12 @@ async function exportZip() {
         const zip = new JSZip();
         const usedNames = new Set();
         state.result.groups.forEach((group) => {
-          const excelData = buildWorkbookForGroup(group, state.result.headers, state.result.companyPlanIndex);
+          const excelData = buildWorkbookForGroup(
+            group,
+            state.result.headers,
+            state.result.companyPlanIndex,
+            state.result.sheetName
+          );
           const fileName = uniqueFileName(buildCompanyFileName(group.company), usedNames);
           zip.file(fileName, excelData);
         });
@@ -579,7 +585,7 @@ async function exportZip() {
       }
     }
 
-function buildWorkbookForGroup(group, baseHeaders, companyPlanIndex) {
+function buildWorkbookForGroup(group, baseHeaders, companyPlanIndex, sheetName) {
       const extraFields = EXTRA_FIELDS[group.company] || [];
       const birthdayIndex = baseHeaders.indexOf(INSURED_BIRTHDAY_HEADER);
       const sourceColumnOrder = buildSourceColumnOrder(baseHeaders);
@@ -624,7 +630,7 @@ function buildWorkbookForGroup(group, baseHeaders, companyPlanIndex) {
       });
 
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName || "Sheet1");
       return XLSX.write(workbook, {
         bookType: "xlsx",
         type: "array",
