@@ -17,6 +17,7 @@
   const COMPANY_PLAN_HEADER = "保险公司方案编号";
   const INSURED_BIRTHDAY_HEADER = "被保险人出生日期";
   const MEDICAL_LOCATION_HEADER = "医保属地";
+  const EMPTY_MEDICAL_LOCATION_VALUE = "无";
   const RELATION_HEADER = "与主险人关系";
   const MEDICAL_ATTRIBUTE_HEADER = "医保属性";
   const PICC_HEALTH_ATTRIBUTE_HEADER = "人保健康属性";
@@ -398,6 +399,9 @@ function buildOutput(main, planIndex, companyIndex, medicalLocationIndex, relati
         const matched = Boolean(planCode) && mapping.has(planCode) && mappedValue !== "";
         const companyPlanValue = matched ? mappedValue : "未匹配";
         const baseRow = main.headers.map((_, index) => normalizeText(row[index]));
+        if (!baseRow[medicalLocationIndex]) {
+          baseRow[medicalLocationIndex] = EMPTY_MEDICAL_LOCATION_VALUE;
+        }
         const medicalAttributeValue = resolveMedicalAttribute({
           company,
           relation: baseRow[relationIndex],
