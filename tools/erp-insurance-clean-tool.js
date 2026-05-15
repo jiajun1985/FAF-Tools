@@ -66,6 +66,20 @@
   const MAIN_PRODUCT_HEADER = "产品名称";
   const PRODUCT_MAPPING_HEADERS = ["产品名称", "产品编码", "产品名称", "保额"];
   const PRODUCT_OUTPUT_HEADERS = new Set(["产品编号", "产品名称", "产品系统投保保额"]);
+  const INSURED_OUTPUT_HEADERS = [
+    "被保险人姓名",
+    "被保险人性别",
+    "被保险人出生日期",
+    "被保险人证件类型",
+    "被保险人证件号"
+  ];
+  const POLICYHOLDER_OUTPUT_BY_INSURED = {
+    "被保险人姓名": "主保险人姓名",
+    "被保险人性别": "主险人性别",
+    "被保险人出生日期": "主险人出生日期",
+    "被保险人证件类型": "主险人证件类型",
+    "被保险人证件号": "主险人证件号"
+  };
   const START_DATE_HEADERS = ["入职日期", "产品收费开始日期"];
   const DATE_OUTPUT_HEADERS = new Set(["被保险人出生日期", "主险人出生日期", "起保时间"]);
 
@@ -291,7 +305,42 @@
       return normalizeText(value);
     });
     outputRow[outputIndexes["减保时间"]] = "";
+    applyRelationRules(outputRow, outputIndexes, productInfo);
     return outputRow;
+  }
+
+  function applyRelationRules(outputRow, outputIndexes, productInfo) {
+    const mappedProductName = productInfo ? productInfo["产品名称"] : "";
+    if (isChildProduct(mappedProductName)) {
+      applyChildProductRule(outputRow, outputIndexes);
+      return;
+    }
+    applyEmployeeProductRule(outputRow, outputIndexes);
+  }
+
+  function isChildProduct(productName) {
+    return normalizeText(productName).includes("子女");
+  }
+
+  function applyChildProductRule(outputRow, outputIndexes) {
+    const relationIndex = outputIndexes["与主险人关系"];
+    const relation = normalizeText(outputRow[relationIndex]);
+    if (!relation || relation === "配偶") {
+      outputRow[relationIndex] = "子女";
+    }
+    if (relation === "配偶") {
+      INSURED_OUTPUT_HEADERS.forEach((header) => {
+        outputRow[outputIndexes[header]] = "";
+      });
+    }
+  }
+
+  function applyEmployeeProductRule(outputRow, outputIndexes) {
+    outputRow[outputIndexes["与主险人关系"]] = "本人";
+    INSURED_OUTPUT_HEADERS.forEach((insuredHeader) => {
+      const policyholderHeader = POLICYHOLDER_OUTPUT_BY_INSURED[insuredHeader];
+      outputRow[outputIndexes[insuredHeader]] = outputRow[outputIndexes[policyholderHeader]];
+    });
   }
 
   function validateProductMapping(productMappingData) {
