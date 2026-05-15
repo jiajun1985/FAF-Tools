@@ -13,6 +13,8 @@
   const { setupUpload } = window.FAFULIFileUpload;
 
   const PLAN_HEADER = "方案编号";
+  const ERP_CUSTOMER_HEADER = "公司ERP客编";
+  const PRODUCT_CODE_HEADER = "产品编号";
   const COMPANY_HEADER = "保险公司";
   const COMPANY_PLAN_HEADER = "保险公司方案编号";
   const INSURED_BIRTHDAY_HEADER = "被保险人出生日期";
@@ -24,6 +26,14 @@
   const CHILD_RELATION_VALUE = "子女";
   const PICC_HEALTH_COMPANY = "中国人民健康保险股份有限公司上海分公司";
   const SPECIAL_COMPANY_HEADERS = ["特殊保险公司名称", "保险公司名称", "保险公司"];
+  const INSURANCE_MAPPING_MATCH_HEADERS = [
+    ERP_CUSTOMER_HEADER,
+    PLAN_HEADER,
+    PRODUCT_CODE_HEADER,
+    RELATION_HEADER,
+    MEDICAL_ATTRIBUTE_HEADER,
+    COMPANY_HEADER
+  ];
   const UNFILLED_COMPANY = "未填写保险公司";
   const AGE_EXTRA_FIELD_COMPANIES = new Set([
     "阳光财产保险股份有限公司苏州中心支公司",
@@ -75,7 +85,7 @@
           <input id="mainFile" type="file" accept=".xlsx">
           <div>
             <p class="drop-title">主表：保全名单</p>
-            <p class="drop-copy">拖拽或点击上传，需包含「方案编号」「保险公司」。</p>
+            <p class="drop-copy">拖拽或点击上传，需包含「公司ERP客编」「方案编号」「产品编号」「保险公司」。</p>
           </div>
           <div class="file-state">
             <div class="file-name" id="mainFileName">未选择文件</div>
@@ -86,7 +96,7 @@
           <input id="mapFile" type="file" accept=".xlsx">
           <div>
             <p class="drop-title">映射表：保险方案映射关系</p>
-            <p class="drop-copy">拖拽或点击上传，需包含「方案编号」「保险公司方案编号」。</p>
+            <p class="drop-copy">拖拽或点击上传，需包含「公司ERP客编」「方案编号」「产品编号」「与主险人关系」「医保属性」「保险公司」「保险公司方案编号」。</p>
           </div>
           <div class="file-state">
             <div class="file-name" id="mapFileName">未选择文件</div>
@@ -285,22 +295,36 @@
       }
 
       const errors = [];
+      const mainErpCustomerIndex = findHeaderIndex(state.main.headers, ERP_CUSTOMER_HEADER);
       const mainPlanIndex = findHeaderIndex(state.main.headers, PLAN_HEADER);
+      const mainProductCodeIndex = findHeaderIndex(state.main.headers, PRODUCT_CODE_HEADER);
       const mainCompanyIndex = findHeaderIndex(state.main.headers, COMPANY_HEADER);
       const mainMedicalLocationIndex = findHeaderIndex(state.main.headers, MEDICAL_LOCATION_HEADER);
       const mainRelationIndex = findHeaderIndex(state.main.headers, RELATION_HEADER);
+      const mapErpCustomerIndex = findHeaderIndex(state.mapping.headers, ERP_CUSTOMER_HEADER);
       const mapPlanIndex = findHeaderIndex(state.mapping.headers, PLAN_HEADER);
+      const mapProductCodeIndex = findHeaderIndex(state.mapping.headers, PRODUCT_CODE_HEADER);
+      const mapRelationIndex = findHeaderIndex(state.mapping.headers, RELATION_HEADER);
+      const mapMedicalAttributeIndex = findHeaderIndex(state.mapping.headers, MEDICAL_ATTRIBUTE_HEADER);
+      const mapCompanyIndex = findHeaderIndex(state.mapping.headers, COMPANY_HEADER);
       const mapCompanyPlanIndex = findHeaderIndex(state.mapping.headers, COMPANY_PLAN_HEADER);
       const medicalMapLocationIndex = findHeaderIndex(state.medicalMapping.headers, MEDICAL_LOCATION_HEADER);
       const medicalMapAttributeIndex = findHeaderIndex(state.medicalMapping.headers, MEDICAL_ATTRIBUTE_HEADER);
       const medicalMapPiccAttributeIndex = findHeaderIndex(state.medicalMapping.headers, PICC_HEALTH_ATTRIBUTE_HEADER);
       const specialCompanyIndex = findFirstHeaderIndex(state.specialCompanyMapping.headers, SPECIAL_COMPANY_HEADERS);
 
+      if (mainErpCustomerIndex === -1) errors.push("主表缺少表头：「公司ERP客编」。");
       if (mainPlanIndex === -1) errors.push("主表缺少表头：「方案编号」。");
+      if (mainProductCodeIndex === -1) errors.push("主表缺少表头：「产品编号」。");
       if (mainCompanyIndex === -1) errors.push("主表缺少表头：「保险公司」。");
       if (mainMedicalLocationIndex === -1) errors.push("主表缺少表头：「医保属地」。");
       if (mainRelationIndex === -1) errors.push("主表缺少表头：「与主险人关系」。");
+      if (mapErpCustomerIndex === -1) errors.push("映射表缺少表头：「公司ERP客编」。");
       if (mapPlanIndex === -1) errors.push("映射表缺少表头：「方案编号」。");
+      if (mapProductCodeIndex === -1) errors.push("映射表缺少表头：「产品编号」。");
+      if (mapRelationIndex === -1) errors.push("映射表缺少表头：「与主险人关系」。");
+      if (mapMedicalAttributeIndex === -1) errors.push("映射表缺少表头：「医保属性」。");
+      if (mapCompanyIndex === -1) errors.push("映射表缺少表头：「保险公司」。");
       if (mapCompanyPlanIndex === -1) errors.push("映射表缺少表头：「保险公司方案编号」。");
       if (medicalMapLocationIndex === -1) errors.push("医保属性映射表缺少表头：「医保属地」。");
       if (medicalMapAttributeIndex === -1) errors.push("医保属性映射表缺少表头：「医保属性」。");
@@ -314,7 +338,21 @@
         return;
       }
 
-      const mapping = buildMapping(state.mapping.rows, mapPlanIndex, mapCompanyPlanIndex);
+      const mapping = buildMapping(state.mapping.rows, {
+        erpCustomerIndex: mapErpCustomerIndex,
+        planIndex: mapPlanIndex,
+        productCodeIndex: mapProductCodeIndex,
+        relationIndex: mapRelationIndex,
+        medicalAttributeIndex: mapMedicalAttributeIndex,
+        companyIndex: mapCompanyIndex,
+        companyPlanIndex: mapCompanyPlanIndex
+      });
+      if (mapping.errors.length || mapping.conflicts.length) {
+        state.result = null;
+        renderErrors([...mapping.errors, ...mapping.conflicts]);
+        setStatus("error", "保险方案映射关系校验未通过，请修正后重新上传。");
+        return;
+      }
       const medicalMapping = buildMedicalMapping(
         state.medicalMapping.rows,
         medicalMapLocationIndex,
@@ -324,10 +362,14 @@
       const specialCompanies = buildSpecialCompanySet(state.specialCompanyMapping.rows, specialCompanyIndex);
       const output = buildOutput(
         state.main,
-        mainPlanIndex,
-        mainCompanyIndex,
-        mainMedicalLocationIndex,
-        mainRelationIndex,
+        {
+          erpCustomerIndex: mainErpCustomerIndex,
+          planIndex: mainPlanIndex,
+          productCodeIndex: mainProductCodeIndex,
+          companyIndex: mainCompanyIndex,
+          medicalLocationIndex: mainMedicalLocationIndex,
+          relationIndex: mainRelationIndex
+        },
         mapping.map,
         medicalMapping,
         specialCompanies
@@ -335,33 +377,57 @@
       state.result = {
         ...output,
         sheetName: state.main.sheetName,
-        conflicts: mapping.conflicts
+        conflicts: []
       };
 
       renderResult(state.result);
     }
 
-function buildMapping(rows, planIndex, companyPlanIndex) {
+function buildMapping(rows, indexes) {
       const map = new Map();
       const conflicts = [];
+      const errors = [];
       rows.forEach((row, index) => {
-        const planCode = normalizeText(row[planIndex]);
-        const companyPlanCode = normalizeText(row[companyPlanIndex]);
-        if (!planCode) return;
-        if (map.has(planCode) && map.get(planCode) !== companyPlanCode) {
-          conflicts.push({
-            rowNumber: index + 2,
-            planCode,
-            firstValue: map.get(planCode),
-            currentValue: companyPlanCode
-          });
+        const rowNumber = index + 2;
+        const matchValues = getMappingMatchValues(row, indexes);
+        const missingHeaders = INSURANCE_MAPPING_MATCH_HEADERS.filter((_, valueIndex) => !matchValues[valueIndex]);
+        const companyPlanCode = normalizeText(row[indexes.companyPlanIndex]);
+        if (missingHeaders.length) {
+          errors.push(`保险方案映射表第 ${rowNumber} 行匹配字段为空：${missingHeaders.map((header) => `「${header}」`).join("、")}。`);
           return;
         }
-        if (!map.has(planCode)) {
-          map.set(planCode, companyPlanCode);
+        const key = buildMappingKey(matchValues);
+        const existing = map.get(key);
+        if (existing && existing.companyPlanCode !== companyPlanCode) {
+          conflicts.push(
+            `保险方案映射表第 ${rowNumber} 行与第 ${existing.rowNumber} 行匹配字段完全相同，`
+            + `但「保险公司方案编号」不同（「${existing.companyPlanCode}」 / 「${companyPlanCode}」），请修正后重新上传。`
+          );
+          return;
+        }
+        if (!existing) {
+          map.set(key, {
+            rowNumber,
+            companyPlanCode
+          });
         }
       });
-      return { map, conflicts };
+      return { map, errors, conflicts };
+    }
+
+function getMappingMatchValues(row, indexes) {
+      return [
+        normalizeText(row[indexes.erpCustomerIndex]),
+        normalizeText(row[indexes.planIndex]),
+        normalizeText(row[indexes.productCodeIndex]),
+        normalizeText(row[indexes.relationIndex]),
+        normalizeText(row[indexes.medicalAttributeIndex]),
+        normalizeText(row[indexes.companyIndex])
+      ];
+    }
+
+function buildMappingKey(values) {
+      return values.map((value) => normalizeText(value)).join("\u0000");
     }
 
 function buildMedicalMapping(rows, locationIndex, attributeIndex, piccAttributeIndex) {
@@ -386,7 +452,15 @@ function buildSpecialCompanySet(rows, companyIndex) {
       return set;
     }
 
-function buildOutput(main, planIndex, companyIndex, medicalLocationIndex, relationIndex, mapping, medicalMapping, specialCompanies) {
+function buildOutput(main, indexes, mapping, medicalMapping, specialCompanies) {
+      const {
+        erpCustomerIndex,
+        planIndex,
+        productCodeIndex,
+        companyIndex,
+        medicalLocationIndex,
+        relationIndex
+      } = indexes;
       const outputHeaders = buildOutputHeaders(main.headers, planIndex, medicalLocationIndex);
       const companyPlanIndex = outputHeaders.indexOf(COMPANY_PLAN_HEADER);
       const groups = new Map();
@@ -395,9 +469,6 @@ function buildOutput(main, planIndex, companyIndex, medicalLocationIndex, relati
       main.rows.forEach((row) => {
         const planCode = normalizeText(row[planIndex]);
         const company = normalizeText(row[companyIndex]) || UNFILLED_COMPANY;
-        const mappedValue = mapping.get(planCode);
-        const matched = Boolean(planCode) && mapping.has(planCode) && mappedValue !== "";
-        const companyPlanValue = matched ? mappedValue : "未匹配";
         const baseRow = main.headers.map((_, index) => normalizeText(row[index]));
         if (!baseRow[medicalLocationIndex]) {
           baseRow[medicalLocationIndex] = EMPTY_MEDICAL_LOCATION_VALUE;
@@ -409,6 +480,17 @@ function buildOutput(main, planIndex, companyIndex, medicalLocationIndex, relati
           medicalMapping,
           specialCompanies
         });
+        const mappingKey = buildMappingKey([
+          baseRow[erpCustomerIndex],
+          planCode,
+          baseRow[productCodeIndex],
+          baseRow[relationIndex],
+          medicalAttributeValue,
+          company
+        ]);
+        const mappedItem = mapping.get(mappingKey);
+        const matched = Boolean(mappedItem) && mappedItem.companyPlanCode !== "";
+        const companyPlanValue = matched ? mappedItem.companyPlanCode : "未匹配";
         const outputRow = buildOutputRow(baseRow, planIndex, medicalLocationIndex, companyPlanValue, medicalAttributeValue);
 
         if (!groups.has(company)) {
@@ -492,15 +574,11 @@ function renderResult(result) {
       renderSummary(result.groups);
       renderUnmatched(result.unmatchedDetails);
       renderExportList(result.groups);
-      renderErrors(result.conflicts.map((item) => (
-        `映射表第 ${item.rowNumber} 行方案编号「${item.planCode}」存在冲突，已使用首次出现的值「${item.firstValue}」。`
-      )));
+      renderErrors([]);
 
       const unmatchedCount = result.groups.reduce((sum, group) => sum + group.unmatched, 0);
       if (unmatchedCount > 0) {
         setStatus("warn", `存在 ${unmatchedCount} 条未匹配，仍可导出；导出文件中会写「未匹配」并标红。`);
-      } else if (result.conflicts.length > 0) {
-        setStatus("warn", "已通过校验，但映射表存在重复冲突；导出时使用首次出现的映射值。");
       } else {
         setStatus("ok", "已通过校验，可导出。");
       }
